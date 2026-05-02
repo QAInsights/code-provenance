@@ -3,10 +3,12 @@ import { BobSessionWatcher } from './core/BobSessionWatcher';
 import { AIBehaviorDetector } from './core/AIBehaviorDetector';
 import { ProvenanceStore } from './storage/ProvenanceStore';
 import { AuditPanel } from './ui/AuditPanel';
+import { BobApiClient, BobApiConfig } from './api/BobApiClient';
 
 let sessionWatcher: BobSessionWatcher | null = null;
 let behaviorDetector: AIBehaviorDetector | null = null;
 let store: ProvenanceStore | null = null;
+let bobApiClient: BobApiClient | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -19,13 +21,40 @@ export function activate(context: vscode.ExtensionContext): void {
   // Initialize storage
   store = new ProvenanceStore(workspaceRoot);
 
+  // Initialize Bob API client
+  const config = vscode.workspace.getConfiguration('codeProvenance');
+  const bobApiConfig: BobApiConfig = {
+    apiKey: config.get('bobApiKey', ''),
+    teamId: config.get('bobTeamId', ''),
+    baseUrl: config.get('bobInstanceUrl', 'https://api.bob.ibm.com'),
+    enabled: config.get('bobApiEnabled', false),
+  };
+  bobApiClient = new BobApiClient(bobApiConfig);
+
   // Initialize watchers
-  sessionWatcher = new BobSessionWatcher(workspaceRoot);
+  sessionWatcher = new BobSessionWatcher(workspaceRoot, store);
   sessionWatcher.start();
 
   behaviorDetector = new AIBehaviorDetector(store);
   const detectorSubscription = behaviorDetector.start();
   context.subscriptions.push(detectorSubscription);
+
+  // Watch for configuration changes
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('codeProvenance')) {
+        const newConfig = vscode.workspace.getConfiguration('codeProvenance');
+        if (bobApiClient) {
+          bobApiClient.updateConfig({
+            apiKey: newConfig.get('bobApiKey', ''),
+            teamId: newConfig.get('bobTeamId', ''),
+            baseUrl: newConfig.get('bobInstanceUrl', 'https://api.bob.ibm.com'),
+            enabled: newConfig.get('bobApiEnabled', false),
+          });
+        }
+      }
+    })
+  );
 
   // Show audit trail command
   const showAuditCommand = vscode.commands.registerCommand(
@@ -119,12 +148,100 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
+  // Test Bob API connection command
+  const testBobApiCommand = vscode.commands.registerCommand(
+    'codeProvenance.testBobApi',
+    async () => {
+      if (!bobApiClient) {
+        vscode.window.showErrorMessage('Bob API client not initialized');
+        return;
+      }
+
+      vscode.window.showInformationMessage('Testing Bob API connection...');
+      const result = await bobApiClient.testConnection();
+
+      if (result.success) {
+        vscode.window.showInformationMessage(`✅ ${result.message}`);
+      } else {
+        vscode.window.showErrorMessage(`❌ ${result.message}`);
+      }
+    }
+  );
+
+  // Fetch Bob inference history command
+  const fetchBobHistoryCommand = vscode.commands.registerCommand(
+    'codeProvenance.fetchBobHistory',
+    async () => {
+      if (!bobApiClient || !store) {
+        vscode.window.showErrorMessage('Bob API client or store not initialized');
+        return;
+      }
+
+      const config = vscode.workspace.getConfiguration('codeProvenance');
+      if (!config.get('bobApiEnabled')) {
+        vscode.window.showWarningMessage('Bob API integration is disabled. Enable it in settings.');
+        return;
+      }
+
+      vscode.window.showInformationMessage('Fetching Bob inference history...');
+      
+      try {
+        // Fetch recent inferences (last 100)
+        const inferences = await bobApiClient.getRecentInferences(100);
+
+        if (inferences.length === 0) {
+          vscode.window.showInformationMessage('No recent Bob inferences found');
+          return;
+        }
+
+        vscode.window.showInformationMessage(
+          `Found ${inferences.length} Bob inferences. Processing...`
+        );
+
+        // TODO: Link inferences to code changes and store in provenance
+        // For now, just show the count
+        vscode.window.showInformationMessage(
+          `✅ Fetched ${inferences.length} Bob inferences successfully`
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        vscode.window.showErrorMessage(`Failed to fetch Bob history: ${message}`);
+      }
+    }
+  );
+
+  // Remove duplicates command
+  const removeDuplicatesCommand = vscode.commands.registerCommand(
+    'codeProvenance.removeDuplicates',
+    () => {
+      if (!store) {
+        vscode.window.showErrorMessage('Provenance store not initialized');
+        return;
+      }
+
+      const duplicatesRemoved = store.removeDuplicates();
+      
+      if (duplicatesRemoved > 0) {
+        vscode.window.showInformationMessage(
+          `✅ Removed ${duplicatesRemoved} duplicate record(s) from audit trail`
+        );
+        // Refresh the audit panel if it's open
+        AuditPanel.createOrShow(context.extensionUri, store);
+      } else {
+        vscode.window.showInformationMessage('No duplicate records found');
+      }
+    }
+  );
+
   context.subscriptions.push(
     showAuditCommand,
     showStatusCommand,
     queryProvenanceCommand,
     validateCommand,
-    exportAuditCommand
+    exportAuditCommand,
+    testBobApiCommand,
+    fetchBobHistoryCommand,
+    removeDuplicatesCommand
   );
 
   // Show welcome message
@@ -145,6 +262,7 @@ export function deactivate(): void {
   }
   behaviorDetector = null;
   store = null;
+  bobApiClient = null;
 }
 
 // Made with Bob

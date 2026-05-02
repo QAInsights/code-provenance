@@ -68,6 +68,8 @@ export class ProvenanceStore {
         records.forEach(record => {
           this.records.set(record.id, record);
         });
+        // Clean up any duplicates that may exist from race conditions
+        this.removeDuplicates();
       }
     } catch (error) {
       console.error('Failed to load provenance records:', error);
@@ -84,7 +86,20 @@ export class ProvenanceStore {
     }
   }
 
-  async addRecord(record: Omit<ProvenanceRecord, 'id' | 'timestamp'>): Promise<ProvenanceRecord> {
+  addRecord(record: Omit<ProvenanceRecord, 'id' | 'timestamp'>): ProvenanceRecord {
+    // Check for duplicates based on file, line range, and code hash
+    const existingRecord = Array.from(this.records.values()).find(existing =>
+      existing.file === record.file &&
+      existing.lineRange[0] === record.lineRange[0] &&
+      existing.lineRange[1] === record.lineRange[1] &&
+      existing.codeHash === record.codeHash
+    );
+
+    if (existingRecord) {
+      // Return the existing record instead of creating a duplicate
+      return existingRecord;
+    }
+
     const fullRecord: ProvenanceRecord = {
       id: this.generateRecordId(),
       timestamp: new Date().toISOString(),
@@ -93,7 +108,7 @@ export class ProvenanceStore {
 
     this.records.set(fullRecord.id, fullRecord);
     this.saveRecords();
-    
+
     return fullRecord;
   }
 
@@ -128,9 +143,39 @@ export class ProvenanceStore {
   }
 
   getRecordsByRiskLevel(riskLevel: 'low' | 'medium' | 'high' | 'critical'): ProvenanceRecord[] {
-    return this.getAllRecords().filter(record => 
+    return this.getAllRecords().filter(record =>
       record.compliance?.risk_level === riskLevel
     );
+  }
+
+  removeDuplicates(): number {
+    const uniqueRecords = new Map<string, ProvenanceRecord>();
+    let duplicatesRemoved = 0;
+
+    // Create a unique key for each record based on file, line range, and code hash
+    for (const record of this.records.values()) {
+      const key = `${record.file}:${record.lineRange[0]}-${record.lineRange[1]}:${record.codeHash}`;
+      
+      if (!uniqueRecords.has(key)) {
+        uniqueRecords.set(key, record);
+      } else {
+        // Keep the older record (earlier timestamp)
+        const existing = uniqueRecords.get(key)!;
+        if (new Date(record.timestamp) < new Date(existing.timestamp)) {
+          uniqueRecords.set(key, record);
+        }
+        duplicatesRemoved++;
+      }
+    }
+
+    // Replace records with deduplicated set
+    this.records.clear();
+    for (const record of uniqueRecords.values()) {
+      this.records.set(record.id, record);
+    }
+
+    this.saveRecords();
+    return duplicatesRemoved;
   }
 
   getStatistics(): {

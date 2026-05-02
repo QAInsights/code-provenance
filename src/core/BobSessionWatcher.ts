@@ -2,13 +2,16 @@ import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { BobSession, ProvenanceMetadata, ComplianceFlag } from '../types';
+import { ProvenanceStore } from '../storage/ProvenanceStore';
 
 export class BobSessionWatcher {
   private watcher: vscode.FileSystemWatcher | null = null;
   private workspaceRoot: string;
+  private store: ProvenanceStore;
 
-  constructor(workspaceRoot: string) {
+  constructor(workspaceRoot: string, store: ProvenanceStore) {
     this.workspaceRoot = workspaceRoot;
+    this.store = store;
   }
 
   start(): void {
@@ -42,13 +45,41 @@ export class BobSessionWatcher {
       
       const provenance = this.convertSessionToProvenance(session);
       
+      // Add to audit trail
+      this.store.addRecord({
+        file: provenance.code_info.file_path,
+        language: provenance.code_info.language,
+        lineRange: provenance.code_info.line_range,
+        code: session.response,
+        codeHash: this.hashCode(session.response),
+        detection: {
+          speed_ms: 0, // Bob session, not real-time detection
+          is_block: true,
+          is_tab_completion: false,
+          confidence: provenance.generation.confidence_score
+        },
+        model: {
+          name: provenance.model_info.name,
+          version: provenance.model_info.version,
+          provider: provenance.model_info.provider
+        },
+        compliance: {
+          flags: provenance.compliance.flags,
+          risk_level: provenance.compliance.risk_level,
+          human_review_required: provenance.compliance.human_review_required
+        },
+        session_id: session.session_id,
+        user: 'current-user'
+      });
+      
       vscode.window.showInformationMessage(
-        `Captured provenance from Bob session: ${session.session_id}`
+        `✅ Bob session captured: ${session.model} generated ${provenance.code_info.lines_count} lines (Risk: ${provenance.compliance.risk_level})`
       );
       
-      console.log('Provenance captured:', provenance);
+      console.log('Provenance captured and stored:', provenance);
     } catch (error) {
       console.error('Failed to process Bob session:', error);
+      vscode.window.showErrorMessage(`Failed to capture Bob session: ${error}`);
     }
   }
 
@@ -97,6 +128,11 @@ export class BobSessionWatcher {
   private hashPrompt(prompt: string): string {
     const crypto = require('crypto');
     return crypto.createHash('sha256').update(prompt).digest('hex');
+  }
+
+  private hashCode(code: string): string {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(code).digest('hex');
   }
 
   private detectLanguage(filePath: string): string {

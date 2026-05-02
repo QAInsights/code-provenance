@@ -194,7 +194,7 @@ export class AIBehaviorDetector {
 
     // Store in provenance database
     if (this.store) {
-      await this.store.addRecord({
+      this.store.addRecord({
         file: filePath,
         language: language,
         lineRange: [startLine, endLine],
