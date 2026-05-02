@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
+import * as path from 'path';
 import { ProvenanceStore } from '../storage/ProvenanceStore';
+import { GitAttributesStore } from '../storage/GitAttributesStore';
 
 interface ChangeMetrics {
   speed: number;
@@ -14,18 +16,24 @@ export class AIBehaviorDetector {
   private changeHistory = new Map<string, ChangeMetrics[]>();
   private outputChannel: vscode.OutputChannel;
   private store: ProvenanceStore | null = null;
+  private gitStore: GitAttributesStore | null = null;
   private readonly AI_SPEED_THRESHOLD = 1000;
   private readonly AI_BLOCK_SIZE = 50;
   private readonly TAB_COMPLETION_SPEED = 100; // Very fast insertions
   private readonly TAB_COMPLETION_MAX_SIZE = 80; // Typically small snippets
 
-  constructor(store?: ProvenanceStore) {
+  constructor(store?: ProvenanceStore, gitStore?: GitAttributesStore) {
     this.outputChannel = vscode.window.createOutputChannel('Code Provenance');
     this.store = store || null;
+    this.gitStore = gitStore || null;
   }
 
   setStore(store: ProvenanceStore): void {
     this.store = store;
+  }
+
+  setGitStore(gitStore: GitAttributesStore): void {
+    this.gitStore = gitStore;
   }
 
   start(): vscode.Disposable {
@@ -219,6 +227,28 @@ export class AIBehaviorDetector {
       });
     }
 
+    // Embed provenance directly in source file via git attributes
+    if (this.gitStore && event.document.uri.scheme === 'file') {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (workspaceFolder) {
+        const relativePath = path.relative(workspaceFolder.uri.fsPath, event.document.uri.fsPath);
+        this.embedProvenanceInSource(relativePath, [startLine, endLine], {
+          model: { name: 'Unknown', version: '1.0', provider: 'Detected' },
+          generation: {
+            prompt_hash: this.hashCode(change.text),
+            confidence_score: confidence / 100
+          },
+          compliance: {
+            flags: this.detectComplianceFlags(change.text),
+            risk_level: riskLevel,
+            human_review_required: this.requiresHumanReview(change.text)
+          }
+        }).catch((err: Error) => {
+          this.outputChannel.appendLine(`Failed to embed provenance: ${err.message}`);
+        });
+      }
+    }
+
     this.outputChannel.appendLine('='.repeat(60));
     this.outputChannel.appendLine('AI CODE DETECTED');
     this.outputChannel.appendLine('='.repeat(60));
@@ -290,6 +320,31 @@ export class AIBehaviorDetector {
 
   private hashCode(text: string): string {
     return crypto.createHash('sha256').update(text).digest('hex').substring(0, 16);
+  }
+
+  private async embedProvenanceInSource(
+    filePath: string,
+    lineRange: [number, number],
+    provenance: {
+      model: { name: string; version: string; provider: string };
+      generation: { prompt_hash: string; confidence_score: number };
+      compliance: {
+        flags: string[];
+        risk_level: 'low' | 'medium' | 'high' | 'critical';
+        human_review_required: boolean;
+      };
+    }
+  ): Promise<void> {
+    if (!this.gitStore) {
+      return;
+    }
+
+    try {
+      await this.gitStore.embedProvenance(filePath, lineRange, provenance);
+      this.outputChannel.appendLine(`✅ Provenance embedded in ${filePath}`);
+    } catch (error) {
+      this.outputChannel.appendLine(`❌ Failed to embed provenance: ${error}`);
+    }
   }
 }
 

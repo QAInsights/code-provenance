@@ -52,6 +52,14 @@
       {
         "command": "codeProvenance.removeDuplicates",
         "title": "Code Provenance: Remove Duplicate Records"
+      },
+      {
+        "command": "codeProvenance.extractProvenance",
+        "title": "Code Provenance: Extract Embedded Provenance from File"
+      },
+      {
+        "command": "codeProvenance.regenerateGitattributes",
+        "title": "Code Provenance: Regenerate .gitattributes File"
       }
     ],
     "menus": {

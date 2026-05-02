@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { BobSessionWatcher } from './core/BobSessionWatcher';
 import { AIBehaviorDetector } from './core/AIBehaviorDetector';
 import { ProvenanceStore } from './storage/ProvenanceStore';
+import { GitAttributesStore } from './storage/GitAttributesStore';
 import { AuditPanel } from './ui/AuditPanel';
 import { BobApiClient, BobApiConfig } from './api/BobApiClient';
 
 let sessionWatcher: BobSessionWatcher | null = null;
 let behaviorDetector: AIBehaviorDetector | null = null;
 let store: ProvenanceStore | null = null;
+let gitStore: GitAttributesStore | null = null;
 let bobApiClient: BobApiClient | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -20,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Initialize storage
   store = new ProvenanceStore(workspaceRoot);
+  gitStore = new GitAttributesStore(workspaceRoot);
 
   // Initialize Bob API client
   const config = vscode.workspace.getConfiguration('codeProvenance');
@@ -35,7 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
   sessionWatcher = new BobSessionWatcher(workspaceRoot, store);
   sessionWatcher.start();
 
-  behaviorDetector = new AIBehaviorDetector(store);
+  behaviorDetector = new AIBehaviorDetector(store, gitStore);
   const detectorSubscription = behaviorDetector.start();
   context.subscriptions.push(detectorSubscription);
 
@@ -220,7 +224,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       const duplicatesRemoved = store.removeDuplicates();
-      
+
       if (duplicatesRemoved > 0) {
         vscode.window.showInformationMessage(
           `✅ Removed ${duplicatesRemoved} duplicate record(s) from audit trail`
@@ -233,6 +237,68 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
+  // Extract provenance from current file
+  const extractProvenanceCommand = vscode.commands.registerCommand(
+    'codeProvenance.extractProvenance',
+    () => {
+      if (!gitStore) {
+        vscode.window.showErrorMessage('Git attributes store not initialized');
+        return;
+      }
+
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage('No active file');
+        return;
+      }
+
+      const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+      const provenanceList = gitStore.extractProvenance(filePath);
+
+      if (provenanceList.length === 0) {
+        vscode.window.showInformationMessage(`No embedded provenance found in ${filePath}`);
+        return;
+      }
+
+      // Show summary
+      const summary = provenanceList.map(p =>
+        `Line ${p.line}: ${p.model.name} (${p.compliance.risk_level} risk)`
+      ).join('\n');
+
+      vscode.window.showInformationMessage(
+        `Found ${provenanceList.length} provenance entries in ${filePath}:\n${summary}`
+      );
+    }
+  );
+
+  // Regenerate .gitattributes file
+  const regenerateGitattributesCommand = vscode.commands.registerCommand(
+    'codeProvenance.regenerateGitattributes',
+    () => {
+      if (!gitStore) {
+        vscode.window.showErrorMessage('Git attributes store not initialized');
+        return;
+      }
+
+      try {
+        // Force recreation by deleting and reinitializing
+        const gitattributesPath = gitStore.getGitattributesPath();
+        if (fs.existsSync(gitattributesPath)) {
+          fs.unlinkSync(gitattributesPath);
+        }
+
+        // Create new store instance to regenerate file
+        gitStore = new GitAttributesStore(workspaceRoot);
+        vscode.window.showInformationMessage(
+          `✅ Regenerated .gitattributes at ${gitStore.getGitattributesPath()}`
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        vscode.window.showErrorMessage(`Failed to regenerate .gitattributes: ${message}`);
+      }
+    }
+  );
+
   context.subscriptions.push(
     showAuditCommand,
     showStatusCommand,
@@ -241,7 +307,9 @@ export function activate(context: vscode.ExtensionContext): void {
     exportAuditCommand,
     testBobApiCommand,
     fetchBobHistoryCommand,
-    removeDuplicatesCommand
+    removeDuplicatesCommand,
+    extractProvenanceCommand,
+    regenerateGitattributesCommand
   );
 
   // Show welcome message
@@ -262,6 +330,7 @@ export function deactivate(): void {
   }
   behaviorDetector = null;
   store = null;
+  gitStore = null;
   bobApiClient = null;
 }
 
