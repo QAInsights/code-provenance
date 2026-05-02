@@ -1,0 +1,47 @@
+IBM-Bob-Dev-Day-hackathon-guide.pdf
+
+# Planning documents (internal use only)
+ARCHITECTURE.md
+IMPLEMENTATION_ROADMAP.md
+CHALLENGES_AND_RISKS.md
+NEXT_STEPS.md
+TYPESCRIPT_BEST_PRACTICES.md
+
+# Node modules
+node_modules/
+
+# Build output
+dist/
+build/
+*.js
+*.d.ts
+*.js.map
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+.cache/
+
+# Made with Bob
