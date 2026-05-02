@@ -1,0 +1,87 @@
+{
+  "name": "code-provenance",
+  "displayName": "AI Code Provenance",
+  "description": "Track and audit AI-generated code for compliance",
+  "version": "0.1.0",
+  "publisher": "code-provenance",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/code-provenance/code-provenance"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeProvenance.showAudit",
+        "title": "Code Provenance: Show Audit Trail",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "codeProvenance.showStatus",
+        "title": "Code Provenance: Show Status"
+      },
+      {
+        "command": "codeProvenance.queryProvenance",
+        "title": "Code Provenance: Query Current File"
+      },
+      {
+        "command": "codeProvenance.validateRepository",
+        "title": "Code Provenance: Validate Repository"
+      },
+      {
+        "command": "codeProvenance.exportAudit",
+        "title": "Code Provenance: Export Audit Trail"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "codeProvenance.showAudit",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Code Provenance",
+      "properties": {
+        "codeProvenance.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable provenance tracking"
+        },
+        "codeProvenance.complianceFlags": {
+          "type": "array",
+          "default": ["HIPAA", "GDPR", "PCI-DSS"],
+          "description": "Compliance flags to check"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "uuid": "^9.0.0"
+  }
+}

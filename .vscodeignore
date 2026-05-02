@@ -1,0 +1,22 @@
+.vscode/**
+.gitignore
+tsconfig.json
+src/**
+test-ai-code.ts
+node_modules/**
+*.md
+!README.md
+bob_sessions/**
+ARCHITECTURE.md
+IMPLEMENTATION_ROADMAP.md
+CHALLENGES_AND_RISKS.md
+NEXT_STEPS.md
+TYPESCRIPT_BEST_PRACTICES.md
+QUICKSTART.md
+BOILERPLATE_README.md
+IBM-Bob-Dev-Day-hackathon-guide.pdf
+
+# Made with Bob
+
+**/.vscode/provenance/**
+**/provenance-audit.json

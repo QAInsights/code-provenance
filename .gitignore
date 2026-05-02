@@ -45,3 +45,7 @@ coverage/
 .cache/
 
 # Made with Bob
+
+# Provenance data (per-project)
+.vscode/provenance/
+provenance-audit.json
